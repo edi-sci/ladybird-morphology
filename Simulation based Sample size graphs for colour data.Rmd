@@ -1,0 +1,155 @@
+---
+title: "Simulation based sample size for colour data"
+author: "Heshani"
+date: "26 June 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(alphashape3d)
+library(ggplot2)
+```
+Step 1: Simulate volume of RGB colour matrix for different sample sizes and 3 alpha values (a = .75, b = .15, c = .5)
+
+Step 2: Graph the volume of RGB colour matrix for different sample sizes and alpha values to see if the colour matric reaches a plateau 
+
+#Step 1
+##Halmus chalibius RGB volume alpha = .75
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+setwd("c:/Users/hedirisi/Documents/R_colour/scripts")
+data <- read.csv("../data/final/all_aggregated_final_colour_means_data_final.csv")
+
+data1 <- data[(data$species=="HC"),][]
+data1 <-data1[(data1$patch=="blue"),][]
+
+data2 <- data1[,c("R", "G", "B")]
+
+#data2 <- data1
+
+data2$R <- data1$R/255
+data2$G <- data1$G/255
+data2$B <- data1$B/255
+
+vt_HC0.75 <- data.frame(matrix(ncol=2, nrow = 100))
+
+colnames(vt_HC0.75) <- c("sample_size","volume")
+
+a <-1
+  for (i in 5: 85) { 
+    
+    for (k in 1:10) {
+      
+      data3 <- data2[sample(nrow(data2), i, replace = FALSE),]
+      a1 <- data.matrix(data3, rownames.force = NA)
+      a1=a1/255
+      ashape3d.obj <- ashape3d(a1, alpha = 0.75)
+      j<-1
+      vt_HC0.75[a,j] <- paste(i)
+      vt_HC0.75[a,j+1] <- volume_ashape3d(ashape3d.obj)
+      
+      a = a+1
+    } 
+       
+      
+        }
+ 
+  write.csv(vt_HC0.75,"../output/true_volume_HC_75.csv")
+  
+
+```
+
+##Halmus chalibius RGB volume alpha = .75
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+vt_HC0.15 <- data.frame(matrix(ncol=2, nrow = 100))
+
+colnames(vt_HC0.15) <- c("sample_size","volume")
+
+a <-1
+  for (i in 5: 85) { 
+    
+    for (k in 1:10) {
+      
+      data3 <- data2[sample(nrow(data2), i, replace = FALSE),]
+      a1 <- data.matrix(data3, rownames.force = NA)
+      a1=a1/255
+      ashape3d.obj <- ashape3d(a1, alpha = 0.15)
+      j<-1
+      vt_HC0.15[a,j] <- paste(i)
+      vt_HC0.15[a,j+1] <- volume_ashape3d(ashape3d.obj)
+      
+      a = a+1
+    } 
+       
+      
+        }
+ 
+  write.csv(vt_HC0.15,"../output/true_volume_HC_15.csv")
+  
+
+```
+
+##Halmus chalibius RGB volume alpha = .5
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+vt_HC0.5 <- data.frame(matrix(ncol=2, nrow = 100))
+
+colnames(vt_HC0.5) <- c("sample_size","volume")
+
+a <-1
+  for (i in 5: 85) { 
+    
+    for (k in 1:10) {
+      
+      data3 <- data2[sample(nrow(data2), i, replace = FALSE),]
+      a1 <- data.matrix(data3, rownames.force = NA)
+      a1=a1/255
+      ashape3d.obj <- ashape3d(a1, alpha = 0.5)
+      j<-1
+      vt_HC0.5[a,j] <- paste(i)
+      vt_HC0.5[a,j+1] <- volume_ashape3d(ashape3d.obj)
+      
+      a = a+1
+    } 
+       
+      
+        }
+ 
+  write.csv(vt_HC0.5,"../output/true_volume_HC_5.csv")
+  
+
+```
+
+
+#Step 2
+
+##Graph
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+setwd("c:/Users/hedirisi/Documents/R_colour/scripts")
+alpha75 <- read.csv("../output/true_volume_HC_75.csv")
+alpha15 <- read.csv("../output/true_volume_HC_15.csv")
+alpha5 <- read.csv("../output/true_volume_HC_5.csv")
+
+alpha75$alphaValue <- paste("a")
+alpha15$alphaValue <- paste("b")
+alpha5$alphaValue <- paste("c")
+
+
+
+all_data <- rbind(alpha75, alpha15, alpha5)
+
+all_data <- all_data[,c("sample_size","volume","alphaValue")]
+
+
+  ggplot(all_data, aes(sample_size, volume, colour=alphaValue)) +
+   aes(colour = factor(alphaValue)) + stat_summary(fun.y = mean, geom="line")+
+  geom_point(size=3) +
+  theme_bw() + 
+  xlab("sample size") +
+  ylab("volume") +
+  ggtitle("sample size vs volume")  
+ 
+```
+
+

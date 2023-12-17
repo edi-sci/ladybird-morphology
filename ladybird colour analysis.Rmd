@@ -1,0 +1,1988 @@
+---
+title: "colour_variation"
+author: "Heshani"
+date: "15 November 2019"
+output:
+  word_document: default
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+setwd("c:/Users/hedirisi/Documents/R_colour/scripts")
+ladybird<- read.csv("c:/Users/hedirisi/Documents/R_colour/traits_volume_for_var.csv", header=TRUE)
+```
+
+## Colour variation in ladybirds using glmm
+
+Method - Dalhey et al (2016) uses ln of distances to centeroid. In this I used lg transfered volume values
+
+Mean lgVolume values for each colour patch of every species were averaged and used as the data set - shown below
+
+col_mech - colour mechanism - black and brown as mel, yellow/orange/red as caretinoid and blue as structural colouration 
+
+Then MCMCglmm was used to model variation in colour patches between species
+
+``` {r, echo=FALSE, message=FALSE, warning=FALSE}
+summary(ladybird)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+require(graphics)
+
+library("lme4")
+library("lmerTest")
+library(car)
+library(MASS)
+#install.packages("mlmRev")
+library(mlmRev)
+#install.packages("agridat")
+library(agridat)
+library(MCMCglmm)
+library(ggplot2)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+paste("testing different probability distributions for response variable: colour")
+
+ladybird$volume.t <- ladybird$volume + 1
+qqp(ladybird$volume.t, "norm")
+
+qqp(ladybird$volume.t, "lnorm")
+
+gamma <- fitdistr(ladybird$volume.t, "gamma")
+qqp(ladybird$volume.t, "gamma", shape = gamma$estimate[[1]], rate = gamma$estimate[[2]])
+
+ladybird$new_v <- log(ladybird$volume)
+
+ladybird$new_v.t <- ladybird$new_v + 1
+qqp(ladybird$new_v.t, "norm")
+
+qqp(ladybird$new_v.t, "lnorm")
+
+#gamma <- fitdistr(ladybird$new_v.t, "gamma")
+qqp(ladybird$new_v.t, "gamma", shape = gamma$estimate[[1]], rate = gamma$estimate[[2]])
+
+### pick the distribution in which the largest number of observations falls between the dashed lines (in this case, probably the lognormal distribution - but could argue the gamma. Will run with lognormal.)
+
+#normal distribution selected for lgVolume
+
+
+```
+
+# Modeling data - lmer using volume
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+model1 <- lmer(volume ~ colour + origin + (1|species), data = ladybird, REML = FALSE)
+summary(model1)
+
+
+library(MASS)
+PQL1 <- glmmPQL(volume ~ colour + sample_size + origin, ~1|species, family = gaussian(link = "log"), data = ladybird, verbose = FALSE)
+summary(PQL1)
+
+PQL <- glmmPQL(volume ~ colour + sample_size + origin, ~1|species, family = gaussian(link = "log"), data = ladybird, verbose = FALSE)
+summary(PQL)
+
+
+```
+
+
+# model MCMCglmm
+``` {r, echo=FALSE, message=FALSE, warning=FALSE}
+
+paste("MCMCglmm for volume")
+
+
+prior.c <- list(R=list(V=1,fix=1),
+                G=list(G1=list(V=1, nu=1, alpha.mu=0, alpha.V=1000), G2=list(V=1, nu=1, alpha.mu=0, alpha.V=1000)))
+prior.c <- list(R=list(V=1,fix=1),
+                G=list(G1=list(V=1, nu=1, alpha.mu=0, alpha.V=1000)))
+
+library(MCMCglmm)
+
+m3 <- MCMCglmm(volume ~ colour + origin + sample_size,
+               random=~ species,
+               data   = ladybird,
+               family = "exponential",
+               thin   = 1,
+               prior = prior.c,
+               burnin = 3000,
+               nitt   = 4000
+               )
+summary(m3)
+
+
+paste("MCMCglmm for lgVolume - model_a")
+
+
+m4 <- MCMCglmm(new_v ~ colour + origin + sample_size,
+               random=~ species,
+               data   = ladybird,
+               thin   = 1,
+               prior = prior.c,
+               burnin = 3000,
+               nitt   = 4000
+)
+summary(m4)
+
+prior.c <- list(R=list(V=1,fix=1),
+                G=list(G1=list(V=1, nu=1, alpha.mu=0, alpha.V=1000)))
+paste("model_b")
+
+m5 <- MCMCglmm(new_v ~ colour + origin + sample_size,
+               random=~ species ,
+               data   = ladybird,
+               family = "gaussian",
+               thin   = 1,
+               prior = prior.c,
+               burnin = 300,
+               nitt   = 1000
+)
+summary(m5)
+
+paste("The abobe model has lowest DIC")
+#Lowest DIC
+
+paste("model d")
+m6 <- MCMCglmm(new_v ~ colour + origin + sample_size + col_mech,
+               random=~ species ,
+               data   = ladybird,
+               family = "gaussian",
+               thin   = 1,
+               prior = prior.c,
+               burnin = 300,
+               nitt   = 1000
+)
+summary(m6)
+
+prior.c <- list(R=list(V=1,fix=1),
+                G=list(G1=list(V=1, nu=1, alpha.mu=0, alpha.V=1000), G2=list(V=1, nu=1, alpha.mu=0, alpha.V=1000)))
+
+
+paste("model e")
+
+m7 <- MCMCglmm(new_v ~ colour + origin ,
+               random=~ species + sample_size,
+               data   = ladybird,
+               family = "gaussian",
+               thin   = 1,
+               prior = prior.c,
+               burnin = 300,
+               nitt   = 1000
+)
+summary(m7)
+
+
+paste("changing prior v=1, nu=0.002")
+prior.c <- list(R=list(V=1,fix=1),
+                G=list(G1=list(V=1, nu=0.002, alpha.mu=0, alpha.V=1000)))
+
+paste("model f")
+m8 <- MCMCglmm(new_v ~ colour + origin + sample_size,
+               random=~ species ,
+               data   = ladybird,
+               family = "gaussian",
+               thin   = 1,
+               prior = prior.c,
+               burnin = 300,
+               nitt   = 1000
+)
+summary(m8)
+
+
+
+paste("model g")
+m9 <- MCMCglmm(new_v ~ colour + origin + sample_size,
+               random=~ species ,
+               data   = ladybird,
+               family = "gaussian",
+               thin   = 1,
+               prior = prior.c,
+               burnin = 300,
+               nitt   = 1000
+)
+summary(m9)
+
+
+paste("model h")
+
+m10 <- MCMCglmm(new_v ~ colour + origin + col_mech + sample_size,   random=~ species ,
+               data   = ladybird,
+               family = "gaussian",
+               thin   = 1,
+               prior = prior.c,
+               burnin = 300,
+               nitt   = 1000
+)
+summary(m10)
+
+prior.c <- list(R=list(V=1,fix=1),
+                G=list(G1=list(V=1, nu=0.002, alpha.mu=0, alpha.V=1000), G2=list(V=1, nu=0.002, alpha.mu=0, alpha.V=1000)))
+
+
+paste("model i")
+
+m11 <- MCMCglmm(new_v ~ colour + origin + col_mech ,
+               random=~ species + sample_size,
+               data   = ladybird,
+               family = "gaussian",
+               thin   = 1,
+               prior = prior.c,
+               burnin = 300,
+               nitt   = 1000
+)
+summary(m11)
+
+
+mean(ladybird$new_v)
+max(ladybird$new_v)
+min(ladybird$new_v)
+var(ladybird$new_v)
+
+paste("Sol contains distribution of the mean and VCV contains the distribution of the variance")
+
+
+
+paste("For model g/m9 ploting sol vs vcv")
+plot(cbind(m9$Sol, m9$VCV))
+
+
+
+prop.table(table(m9$Sol > -14 & m9$Sol< 0))
+prop.table(table(m9$VCV> -10 & m9$VCV< 7))
+
+paste("plot vcv - marginal distribution of the variance")
+hist(m9$VCV[which(m9$VCV < 7)])
+
+
+
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+paste("species as fixed effect - not working??")
+prior_m9_2 <- list(R=list( R1 = list(V=1e+08,nu=0.002), R2= list(V=1e+08,nu=0.002), R3= list(V=1e+08,nu=0.002)),
+                G=list(G1=list(nu=0.002, V =1, alpha.mu=0, alpha.V=1000)))
+
+m9_2 <- MCMCglmm(new_v ~ colour + origin +species ,
+               random=~ sample_size,
+               data   = ladybird,
+               family = "gaussian",
+               thin   = 1,
+               prior = prior_m9_2,
+               burnin = 300,
+               nitt   = 1000
+)
+summary(m9_2)
+```
+
+
+## scatter plot to get 3D - centroid - Mahalanobis distances
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+a1<- read.csv("c:/Users/hedirisi/Documents/R_colour/data/final/all_aggregated_final_colour_means_data_final.csv", header=TRUE)
+
+a1$R <- a1$R/255
+a1$G <- a1$G/255
+a1$B <- a1$B/255
+
+library(car)
+
+#works but not very important for the analysis
+ if(interactive() && require(rgl) && require(mgcv)){
+scatter3d(R ~ G + B, data=a1, id=list(n=1))
+Sys.sleep(5) # wait 5 seconds
+scatter3d(R ~ G + B | species, data=a1, surface.col = 1:9)
+Sys.sleep(5)
+scatter3d(R ~ G + B | species, surface=FALSE,
+	ellipsoid=TRUE, revolutions=1, data=a1,surface.col = 1:9)
+scatter3d(R ~ G + B, fit=c("smooth"),
+	data=a1,surface.col = 1:9)
+Sys.sleep(5)
+scatter3d(R ~ G + B | species,fit=c("smooth"),
+    radius=(1+ as.numeric(patch))^(1/3), data=a1,surface.col = 1:9)
+	}
+	## Not run: 
+# drag right mouse button to identify points, click right button in open area to exit
+#scatter3d(R ~ G + B, data=a1, id=list(method="identify"))
+#scatter3d(R ~ G + B | species, data=a1, id=list(method="identify"))
+    
+## End(Not run)
+
+##selected graph to plot all colour patches of all species
+
+scatter3d(R ~ G + B | species, surface=FALSE,
+	ellipsoid=TRUE, ellipsoid.alpha = 0.0,
+revolutions=0,col = (species), data=a1,surface.col = 1:9)
+
+```
+#calculating distances and creating the table dis_table
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#getting distances
+#centroid <- c(mean(data3$R),mean(data3$G),mean(data3$B))
+
+data <- read.csv("../data/final/all_aggregated_final_colour_means_data_final.csv")
+
+#make a table to record avg distances
+dis_table <- data.frame(matrix(ncol=9, nrow = 10))
+colnames(dis_table) <- c("species", "colour", "avg_lgDist", "sample","sd_lgDist","avg_dis","sd_dis","lg_avg_dis","lg_sd_dis")
+#dis_table <- data.frame("species", "colour", "avg_lgDist", "sample")
+
+#Select col patches and species
+
+data1 <- data[(data$species=="Epilachna"),][]
+data1 <-data1[(data1$patch=="black"),][]
+
+data2 <- data1[,c("R", "G", "B")]
+data3 <- data2
+
+data3$R <- data2$R/255
+data3$G <- data2$G/255
+data3$B <- data2$B/255
+
+#get centroid 
+for (k in 1:nrow(data3)) {
+  data3$centR[k] <- mean(data3$R)
+    data3$centG[k] <- mean(data3$G)
+      data3$centB[k] <- mean(data3$B)
+      
+      k=k+1
+  
+  
+}
+
+#get distances
+data3$distance <- apply(data3, 1, function(R) dist(matrix(R, nrow = 2, byrow = TRUE)))
+
+#natural logarithm of distances to reduce heterogeneity of variances in the statistical analysis
+
+data3$lgdistance <- log(data3$distance)
+mean(data3$lgdistance)
+i=1
+#add to the avg_dist table
+j=1
+dis_table[i,j] <- "Epilachna"
+dis_table[i,j+1] <-"black"
+dis_table[i,j+2] <-mean(data3$lgdistance)
+dis_table[i,j+3] <-nrow(data3)
+dis_table[i,j+4] <-sd(data3$lgdistance)
+dis_table[i,j+5] <-mean(data3$distance)
+dis_table[i,j+6] <-sd(data3$distance)
+dis_table[i,j+7] <-log(mean(data3$distance))
+dis_table[i,j+8] <-log(sd(data3$distance))
+
+
+
+i=i+1
+i
+data4 <- cbind(data1[,], data3[,c("distance","lgdistance","centR","centG","centB")])
+write.csv(data4, "../data1.csv")
+#End of one species one colour
+
+#start repeat
+#Select col patches and species
+
+data1 <- data[(data$species=="Epilachna"),][]
+data1 <-data1[(data1$patch=="yellow"),][]
+
+data2 <- data1[,c("R", "G", "B")]
+data3 <- data2
+
+data3$R <- data2$R/255
+data3$G <- data2$G/255
+data3$B <- data2$B/255
+
+#get centroid 
+for (k in 1:nrow(data3)) {
+  data3$centR[k] <- mean(data3$R)
+    data3$centG[k] <- mean(data3$G)
+      data3$centB[k] <- mean(data3$B)
+      
+      k=k+1
+  
+  
+}
+
+#get distances
+data3$distance <- apply(data3, 1, function(R) dist(matrix(R, nrow = 2, byrow = TRUE)))
+
+#natural logarithm of distances to reduce heterogeneity of variances in the statistical analysis
+
+data3$lgdistance <- log(data3$distance)
+mean(data3$lgdistance)
+
+#add to the avg_dist table
+i
+j=1
+dis_table[i,j] <- "Epilachna"
+dis_table[i,j+1] <-"yellow"
+dis_table[i,j+2] <-mean(data3$lgdistance)
+dis_table[i,j+3] <-nrow(data3)
+dis_table[i,j+4] <-sd(data3$lgdistance)
+dis_table[i,j+5] <-mean(data3$distance)
+dis_table[i,j+6] <-sd(data3$distance)
+dis_table[i,j+7] <-log(mean(data3$distance))
+dis_table[i,j+8] <-log(sd(data3$distance))
+
+i=i+1
+
+data4 <- cbind(data1[,], data3[,c("distance","lgdistance","centR","centG","centB")])
+write.csv(data4, "../data2.csv")
+
+#End of one species one colour
+
+#start repeat
+#Select col patches and species
+
+data1 <- data[(data$species=="HC"),][]
+data1 <-data1[(data1$patch=="blue"),][]
+
+data2 <- data1[,c("R", "G", "B")]
+data3 <- data2
+
+data3$R <- data2$R/255
+data3$G <- data2$G/255
+data3$B <- data2$B/255
+
+#get centroid 
+for (k in 1:nrow(data3)) {
+  data3$centR[k] <- mean(data3$R)
+    data3$centG[k] <- mean(data3$G)
+      data3$centB[k] <- mean(data3$B)
+      
+      k=k+1
+  
+  
+}
+
+#get distances
+data3$distance <- apply(data3, 1, function(R) dist(matrix(R, nrow = 2, byrow = TRUE)))
+
+#natural logarithm of distances to reduce heterogeneity of variances in the statistical analysis
+
+data3$lgdistance <- log(data3$distance)
+mean(data3$lgdistance)
+
+#add to the avg_dist table
+j=1
+dis_table[i,j] <- "HC"
+dis_table[i,j+1] <-"blue"
+dis_table[i,j+2] <-mean(data3$lgdistance)
+dis_table[i,j+3] <-nrow(data3)
+dis_table[i,j+4] <-sd(data3$lgdistance)
+dis_table[i,j+5] <-mean(data3$distance)
+dis_table[i,j+6] <-sd(data3$distance)
+dis_table[i,j+7] <-log(mean(data3$distance))
+dis_table[i,j+8] <-log(sd(data3$distance))
+
+i=i+1
+
+data4 <- cbind(data1[,], data3[,c("distance","lgdistance","centR","centG","centB")])
+write.csv(data4, "../data3.csv")
+
+#End of one species one colour
+
+
+
+#start repeat
+#Select col patches and species
+
+data1 <- data[(data$species=="SM"),][]
+data1 <-data1[(data1$patch=="yellow"),][]
+
+data2 <- data1[,c("R", "G", "B")]
+data3 <- data2
+
+data3$R <- data2$R/255
+data3$G <- data2$G/255
+data3$B <- data2$B/255
+
+#get centroid 
+for (k in 1:nrow(data3)) {
+  data3$centR[k] <- mean(data3$R)
+    data3$centG[k] <- mean(data3$G)
+      data3$centB[k] <- mean(data3$B)
+      
+      k=k+1
+  
+  
+}
+
+#get distances
+data3$distance <- apply(data3, 1, function(R) dist(matrix(R, nrow = 2, byrow = TRUE)))
+
+#natural logarithm of distances to reduce heterogeneity of variances in the statistical analysis
+
+data3$lgdistance <- log(data3$distance)
+mean(data3$lgdistance)
+
+#add to the avg_dist table
+j=1
+dis_table[i,j] <- "SM"
+dis_table[i,j+1] <-"yellow"
+dis_table[i,j+2] <-mean(data3$lgdistance)
+dis_table[i,j+3] <-nrow(data3)
+dis_table[i,j+4] <-sd(data3$lgdistance)
+dis_table[i,j+5] <-mean(data3$distance)
+dis_table[i,j+6] <-sd(data3$distance)
+dis_table[i,j+7] <-log(mean(data3$distance))
+dis_table[i,j+8] <-log(sd(data3$distance))
+
+i=i+1
+
+data4 <- cbind(data1[,], data3[,c("distance","lgdistance","centR","centG","centB")])
+write.csv(data4, "../data4.csv")
+
+#End of one species one colour
+
+
+
+#start repeat
+#Select col patches and species
+
+data1 <- data[(data$species=="SM"),][]
+data1 <-data1[(data1$patch=="black"),][]
+
+data2 <- data1[,c("R", "G", "B")]
+data3 <- data2
+
+data3$R <- data2$R/255
+data3$G <- data2$G/255
+data3$B <- data2$B/255
+
+#get centroid 
+for (k in 1:nrow(data3)) {
+  data3$centR[k] <- mean(data3$R)
+    data3$centG[k] <- mean(data3$G)
+      data3$centB[k] <- mean(data3$B)
+      
+      k=k+1
+  
+  
+}
+
+#get distances
+data3$distance <- apply(data3, 1, function(R) dist(matrix(R, nrow = 2, byrow = TRUE)))
+
+#natural logarithm of distances to reduce heterogeneity of variances in the statistical analysis
+
+data3$lgdistance <- log(data3$distance)
+mean(data3$lgdistance)
+
+#add to the avg_dist table
+j=1
+dis_table[i,j] <- "SM"
+dis_table[i,j+1] <-"black"
+dis_table[i,j+2] <-mean(data3$lgdistance)
+dis_table[i,j+3] <-nrow(data3)
+dis_table[i,j+4] <-sd(data3$lgdistance)
+dis_table[i,j+5] <-mean(data3$distance)
+dis_table[i,j+6] <-sd(data3$distance)
+dis_table[i,j+7] <-log(mean(data3$distance))
+dis_table[i,j+8] <-log(sd(data3$distance))
+
+i=i+1
+
+data4 <- cbind(data1[,], data3[,c("distance","lgdistance","centR","centG","centB")])
+write.csv(data4, "../data5.csv")
+
+#End of one species one colour
+
+
+#start repeat
+#Select col patches and species
+
+data1 <- data[(data$species=="IG"),][]
+data1 <-data1[(data1$patch=="yellow"),][]
+
+data2 <- data1[,c("R", "G", "B")]
+data3 <- data2
+
+data3$R <- data2$R/255
+data3$G <- data2$G/255
+data3$B <- data2$B/255
+
+#get centroid 
+for (k in 1:nrow(data3)) {
+  data3$centR[k] <- mean(data3$R)
+    data3$centG[k] <- mean(data3$G)
+      data3$centB[k] <- mean(data3$B)
+      
+      k=k+1
+  
+  
+}
+#get distances
+data3$distance <- apply(data3, 1, function(R) dist(matrix(R, nrow = 2, byrow = TRUE)))
+
+#natural logarithm of distances to reduce heterogeneity of variances in the statistical analysis
+
+data3$lgdistance <- log(data3$distance)
+mean(data3$lgdistance)
+
+#add to the avg_dist table
+j=1
+dis_table[i,j] <- "IG"
+dis_table[i,j+1] <-"yellow"
+dis_table[i,j+2] <-mean(data3$lgdistance)
+dis_table[i,j+3] <-nrow(data3)
+dis_table[i,j+4] <-sd(data3$lgdistance)
+dis_table[i,j+5] <-mean(data3$distance)
+dis_table[i,j+6] <-sd(data3$distance)
+dis_table[i,j+7] <-log(mean(data3$distance))
+dis_table[i,j+8] <-log(sd(data3$distance))
+
+i=i+1
+
+data4 <- cbind(data1[,], data3[,c("distance","lgdistance","centR","centG","centB")])
+write.csv(data4, "../data6.csv")
+#End of one species one colour
+
+
+#start repeat
+#Select col patches and species
+
+data1 <- data[(data$species=="IG"),][]
+data1 <-data1[(data1$patch=="black"),][]
+
+data2 <- data1[,c("R", "G", "B")]
+data3 <- data2
+
+data3$R <- data2$R/255
+data3$G <- data2$G/255
+data3$B <- data2$B/255
+
+#get centroid 
+for (k in 1:nrow(data3)) {
+  data3$centR[k] <- mean(data3$R)
+    data3$centG[k] <- mean(data3$G)
+      data3$centB[k] <- mean(data3$B)
+      
+      k=k+1
+  
+  
+}
+
+#get distances
+data3$distance <- apply(data3, 1, function(R) dist(matrix(R, nrow = 2, byrow = TRUE)))
+
+#natural logarithm of distances to reduce heterogeneity of variances in the statistical analysis
+
+data3$lgdistance <- log(data3$distance)
+mean(data3$lgdistance)
+
+#add to the avg_dist table
+j=1
+dis_table[i,j] <- "IG"
+dis_table[i,j+1] <-"black"
+dis_table[i,j+2] <-mean(data3$lgdistance)
+dis_table[i,j+3] <-nrow(data3)
+dis_table[i,j+4] <-sd(data3$lgdistance)
+dis_table[i,j+5] <-mean(data3$distance)
+dis_table[i,j+6] <-sd(data3$distance)
+dis_table[i,j+7] <-log(mean(data3$distance))
+dis_table[i,j+8] <-log(sd(data3$distance))
+
+i=i+1
+
+data4 <- cbind(data1[,], data3[,c("distance","lgdistance","centR","centG","centB")])
+write.csv(data4, "../data7.csv")
+
+#End of one species one colour
+
+
+#start repeat
+#Select col patches and species
+
+data1 <- data[(data$species=="IG_museum"),][]
+data1 <-data1[(data1$patch=="yellow"),][]
+
+data2 <- data1[,c("R", "G", "B")]
+data3 <- data2
+
+data3$R <- data2$R/255
+data3$G <- data2$G/255
+data3$B <- data2$B/255
+
+#get centroid 
+for (k in 1:nrow(data3)) {
+  data3$centR[k] <- mean(data3$R)
+    data3$centG[k] <- mean(data3$G)
+      data3$centB[k] <- mean(data3$B)
+      
+      k=k+1
+  
+  
+}
+
+#get distances
+data3$distance <- apply(data3, 1, function(R) dist(matrix(R, nrow = 2, byrow = TRUE)))
+
+#natural logarithm of distances to reduce heterogeneity of variances in the statistical analysis
+
+data3$lgdistance <- log(data3$distance)
+mean(data3$lgdistance)
+
+#add to the avg_dist table
+j=1
+dis_table[i,j] <- "IG_museum"
+dis_table[i,j+1] <-"yellow"
+dis_table[i,j+2] <-mean(data3$lgdistance)
+dis_table[i,j+3] <-nrow(data3)
+dis_table[i,j+4] <-sd(data3$lgdistance)
+dis_table[i,j+5] <-mean(data3$distance)
+dis_table[i,j+6] <-sd(data3$distance)
+dis_table[i,j+7] <-log(mean(data3$distance))
+dis_table[i,j+8] <-log(sd(data3$distance))
+
+
+i=i+1
+
+data4 <- cbind(data1[,], data3[,c("distance","lgdistance","centR","centG","centB")])
+write.csv(data4, "../data8.csv")
+
+#End of one species one colour
+
+
+#start repeat
+#Select col patches and species
+
+data1 <- data[(data$species=="IG_museum"),][]
+data1 <-data1[(data1$patch=="black"),][]
+
+data2 <- data1[,c("R", "G", "B")]
+data3 <- data2
+
+data3$R <- data2$R/255
+data3$G <- data2$G/255
+data3$B <- data2$B/255
+
+#get centroid 
+for (k in 1:nrow(data3)) {
+  data3$centR[k] <- mean(data3$R)
+    data3$centG[k] <- mean(data3$G)
+      data3$centB[k] <- mean(data3$B)
+      
+      k=k+1
+  
+  
+}
+
+#get distances
+data3$distance <- apply(data3, 1, function(R) dist(matrix(R, nrow = 2, byrow = TRUE)))
+
+#natural logarithm of distances to reduce heterogeneity of variances in the statistical analysis
+
+data3$lgdistance <- log(data3$distance)
+mean(data3$lgdistance)
+
+#add to the avg_dist table
+j=1
+dis_table[i,j] <- "IG_museum"
+dis_table[i,j+1] <-"black"
+dis_table[i,j+2] <-mean(data3$lgdistance)
+dis_table[i,j+3] <-nrow(data3)
+dis_table[i,j+4] <-sd(data3$lgdistance)
+dis_table[i,j+5] <-mean(data3$distance)
+dis_table[i,j+6] <-sd(data3$distance)
+dis_table[i,j+7] <-log(mean(data3$distance))
+dis_table[i,j+8] <-log(sd(data3$distance))
+
+i=i+1
+
+data4 <- cbind(data1[,], data3[,c("distance","lgdistance","centR","centG","centB")])
+write.csv(data4, "../data9.csv")
+#End of one species one colour
+
+
+#start repeat
+#Select col patches and species
+
+data1 <- data[(data$species=="adoxellus"),][]
+data1 <-data1[(data1$patch=="brown"),][]
+
+data2 <- data1[,c("R", "G", "B")]
+data3 <- data2
+
+data3$R <- data2$R/255
+data3$G <- data2$G/255
+data3$B <- data2$B/255
+
+#get centroid 
+for (k in 1:nrow(data3)) {
+  data3$centR[k] <- mean(data3$R)
+    data3$centG[k] <- mean(data3$G)
+      data3$centB[k] <- mean(data3$B)
+      
+      k=k+1
+  
+  
+}
+
+#get distances
+data3$distance <- apply(data3, 1, function(R) dist(matrix(R, nrow = 2, byrow = TRUE)))
+
+#natural logarithm of distances to reduce heterogeneity of variances in the statistical analysis
+
+data3$lgdistance <- log(data3$distance)
+mean(data3$lgdistance)
+
+#add to the avg_dist table
+j=1
+dis_table[i,j] <- "adoxellus"
+dis_table[i,j+1] <-"brown"
+dis_table[i,j+2] <-mean(data3$lgdistance)
+dis_table[i,j+3] <-nrow(data3)
+dis_table[i,j+4] <-sd(data3$lgdistance)
+dis_table[i,j+5] <-mean(data3$distance)
+dis_table[i,j+6] <-sd(data3$distance)
+dis_table[i,j+7] <-log(mean(data3$distance))
+dis_table[i,j+8] <-log(sd(data3$distance))
+
+i=i+1
+
+data4 <- cbind(data1[,], data3[,c("distance","lgdistance","centR","centG","centB")])
+write.csv(data4, "../data10.csv")
+
+#End of one species one colour
+
+
+#start repeat
+#Select col patches and species
+
+data1 <- data[(data$species=="hoangus"),][]
+data1 <-data1[(data1$patch=="yellow"),][]
+
+data2 <- data1[,c("R", "G", "B")]
+data3 <- data2
+
+data3$R <- data2$R/255
+data3$G <- data2$G/255
+data3$B <- data2$B/255
+
+#get centroid 
+for (k in 1:nrow(data3)) {
+  data3$centR[k] <- mean(data3$R)
+    data3$centG[k] <- mean(data3$G)
+      data3$centB[k] <- mean(data3$B)
+      
+      k=k+1
+  
+  
+}
+
+#get distances
+data3$distance <- apply(data3, 1, function(R) dist(matrix(R, nrow = 2, byrow = TRUE)))
+
+#natural logarithm of distances to reduce heterogeneity of variances in the statistical analysis
+
+data3$lgdistance <- log(data3$distance)
+mean(data3$lgdistance)
+
+#add to the avg_dist table
+j=1
+dis_table[i,j] <- "hoangus"
+dis_table[i,j+1] <-"yellow"
+dis_table[i,j+2] <-mean(data3$lgdistance)
+dis_table[i,j+3] <-nrow(data3)
+dis_table[i,j+4] <-sd(data3$lgdistance)
+dis_table[i,j+5] <-mean(data3$distance)
+dis_table[i,j+6] <-sd(data3$distance)
+dis_table[i,j+7] <-log(mean(data3$distance))
+dis_table[i,j+8] <-log(sd(data3$distance))
+
+i=i+1
+
+data4 <- cbind(data1[,], data3[,c("distance","lgdistance","centR","centG","centB")])
+write.csv(data4, "../data11.csv")
+
+#End of one species one colour
+
+
+
+#start repeat
+#Select col patches and species
+
+data1 <- data[(data$species=="hoangus"),][]
+data1 <-data1[(data1$patch=="black"),][]
+
+data2 <- data1[,c("R", "G", "B")]
+data3 <- data2
+
+data3$R <- data2$R/255
+data3$G <- data2$G/255
+data3$B <- data2$B/255
+
+#get centroid 
+for (k in 1:nrow(data3)) {
+  data3$centR[k] <- mean(data3$R)
+    data3$centG[k] <- mean(data3$G)
+      data3$centB[k] <- mean(data3$B)
+      
+      k=k+1
+  
+  
+}
+
+#get distances
+data3$distance <- apply(data3, 1, function(R) dist(matrix(R, nrow = 2, byrow = TRUE)))
+
+#natural logarithm of distances to reduce heterogeneity of variances in the statistical analysis
+
+data3$lgdistance <- log(data3$distance)
+mean(data3$lgdistance)
+
+#add to the avg_dist table
+j=1
+dis_table[i,j] <- "hoangus"
+dis_table[i,j+1] <-"black"
+dis_table[i,j+2] <-mean(data3$lgdistance)
+dis_table[i,j+3] <-nrow(data3)
+dis_table[i,j+4] <-sd(data3$lgdistance)
+dis_table[i,j+5] <-mean(data3$distance)
+dis_table[i,j+6] <-sd(data3$distance)
+dis_table[i,j+7] <-log(mean(data3$distance))
+dis_table[i,j+8] <-log(sd(data3$distance))
+
+i=i+1
+
+data4 <- cbind(data1[,], data3[,c("distance","lgdistance","centR","centG","centB")])
+write.csv(data4, "../data12.csv")
+
+#End of one species one colour
+
+
+#start repeat
+#Select col patches and species
+
+data1 <- data[(data$species=="antipoda"),][]
+data1 <-data1[(data1$patch=="yellow"),][]
+
+data2 <- data1[,c("R", "G", "B")]
+data3 <- data2
+
+data3$R <- data2$R/255
+data3$G <- data2$G/255
+data3$B <- data2$B/255
+
+#get centroid 
+for (k in 1:nrow(data3)) {
+  data3$centR[k] <- mean(data3$R)
+    data3$centG[k] <- mean(data3$G)
+      data3$centB[k] <- mean(data3$B)
+      
+      k=k+1
+  
+  
+}
+
+#get distances
+data3$distance <- apply(data3, 1, function(R) dist(matrix(R, nrow = 2, byrow = TRUE)))
+
+#natural logarithm of distances to reduce heterogeneity of variances in the statistical analysis
+
+data3$lgdistance <- log(data3$distance)
+mean(data3$lgdistance)
+
+#add to the avg_dist table
+j=1
+dis_table[i,j] <- "antipoda"
+dis_table[i,j+1] <-"yellow"
+dis_table[i,j+2] <-mean(data3$lgdistance)
+dis_table[i,j+3] <-nrow(data3)
+dis_table[i,j+4] <-sd(data3$lgdistance)
+dis_table[i,j+5] <-mean(data3$distance)
+dis_table[i,j+6] <-sd(data3$distance)
+dis_table[i,j+7] <-log(mean(data3$distance))
+dis_table[i,j+8] <-log(sd(data3$distance))
+
+i=i+1
+
+data4 <- cbind(data1[,], data3[,c("distance","lgdistance","centR","centG","centB")])
+write.csv(data4, "../data13.csv")
+
+#End of one species one colour
+
+
+#start repeat
+#Select col patches and species
+
+data1 <- data[(data$species=="antipoda"),][]
+data1 <-data1[(data1$patch=="brown"),][]
+
+data2 <- data1[,c("R", "G", "B")]
+data3 <- data2
+
+data3$R <- data2$R/255
+data3$G <- data2$G/255
+data3$B <- data2$B/255
+
+#get centroid 
+for (k in 1:nrow(data3)) {
+  data3$centR[k] <- mean(data3$R)
+    data3$centG[k] <- mean(data3$G)
+      data3$centB[k] <- mean(data3$B)
+      
+      k=k+1
+  
+  
+}
+
+#get distances
+data3$distance <- apply(data3, 1, function(R) dist(matrix(R, nrow = 2, byrow = TRUE)))
+
+#natural logarithm of distances to reduce heterogeneity of variances in the statistical analysis
+
+data3$lgdistance <- log(data3$distance)
+mean(data3$lgdistance)
+
+#add to the avg_dist table
+j=1
+dis_table[i,j] <- "antipoda"
+dis_table[i,j+1] <-"brown"
+dis_table[i,j+2] <-mean(data3$lgdistance)
+dis_table[i,j+3] <-nrow(data3)
+dis_table[i,j+4] <-sd(data3$lgdistance)
+dis_table[i,j+5] <-mean(data3$distance)
+dis_table[i,j+6] <-sd(data3$distance)
+dis_table[i,j+7] <-log(mean(data3$distance))
+dis_table[i,j+8] <-log(sd(data3$distance))
+
+i=i+1
+
+data4 <- cbind(data1[,], data3[,c("distance","lgdistance","centR","centG","centB")])
+write.csv(data4, "../data14.csv")
+
+#End of one species one colour
+
+#start repeat
+#Select col patches and species
+
+data1 <- data[(data$species=="veronicobius"),][]
+data1 <-data1[(data1$patch=="yellow"),][]
+
+data2 <- data1[,c("R", "G", "B")]
+data3 <- data2
+
+data3$R <- data2$R/255
+data3$G <- data2$G/255
+data3$B <- data2$B/255
+
+#get centroid 
+for (k in 1:nrow(data3)) {
+  data3$centR[k] <- mean(data3$R)
+    data3$centG[k] <- mean(data3$G)
+      data3$centB[k] <- mean(data3$B)
+      
+      k=k+1
+  
+  
+}
+#get distances
+data3$distance <- apply(data3, 1, function(R) dist(matrix(R, nrow = 2, byrow = TRUE)))
+
+#natural logarithm of distances to reduce heterogeneity of variances in the statistical analysis
+
+data3$lgdistance <- log(data3$distance)
+mean(data3$lgdistance)
+
+#add to the avg_dist table
+j=1
+dis_table[i,j] <- "veronicobius"
+dis_table[i,j+1] <-"yellow"
+dis_table[i,j+2] <-mean(data3$lgdistance)
+dis_table[i,j+3] <-nrow(data3)
+dis_table[i,j+4] <-sd(data3$lgdistance)
+dis_table[i,j+5] <-mean(data3$distance)
+dis_table[i,j+6] <-sd(data3$distance)
+dis_table[i,j+7] <-log(mean(data3$distance))
+dis_table[i,j+8] <-log(sd(data3$distance))
+
+i=i+1
+
+data4 <- cbind(data1[,], data3[,c("distance","lgdistance","centR","centG","centB")])
+write.csv(data4, "../data15.csv")
+
+#End of one species one colour
+
+#start repeat
+#Select col patches and species
+
+data1 <- data[(data$species=="veronicobius"),][]
+data1 <-data1[(data1$patch=="brown"),][]
+
+data2 <- data1[,c("R", "G", "B")]
+data3 <- data2
+
+data3$R <- data2$R/255
+data3$G <- data2$G/255
+data3$B <- data2$B/255
+
+#get centroid 
+for (k in 1:nrow(data3)) {
+  data3$centR[k] <- mean(data3$R)
+    data3$centG[k] <- mean(data3$G)
+      data3$centB[k] <- mean(data3$B)
+      
+      k=k+1
+  
+  
+}
+
+#get distances
+data3$distance <- apply(data3, 1, function(R) dist(matrix(R, nrow = 2, byrow = TRUE)))
+
+#natural logarithm of distances to reduce heterogeneity of variances in the statistical analysis
+
+data3$lgdistance <- log(data3$distance)
+mean(data3$lgdistance)
+
+#add to the avg_dist table
+j=1
+dis_table[i,j] <- "veronicobius"
+dis_table[i,j+1] <-"brown"
+dis_table[i,j+2] <-mean(data3$lgdistance)
+dis_table[i,j+3] <-nrow(data3)
+dis_table[i,j+4] <-sd(data3$lgdistance)
+dis_table[i,j+5] <-mean(data3$distance)
+dis_table[i,j+6] <-sd(data3$distance)
+dis_table[i,j+7] <-log(mean(data3$distance))
+dis_table[i,j+8] <-log(sd(data3$distance))
+
+
+
+
+
+
+i=i+1
+
+data4 <- cbind(data1[,], data3[,c("distance","lgdistance","centR","centG","centB")])
+write.csv(data4, "../data16.csv")
+
+#End of one species one colour
+
+#distance table complete
+dis_table
+write.csv(dis_table,"..//dis_table2.csv")
+
+data_final_colour <- rbind(read.csv("..//data1.csv")[,], read.csv("..//data2.csv")[,],read.csv("..//data3.csv")[,],read.csv("..//data4.csv")[,],read.csv("..//data5.csv")[,],read.csv("..//data6.csv")[,],read.csv("..//data7.csv")[,],read.csv("..//data8.csv")[,],read.csv("..//data9.csv")[,],read.csv("..//data10.csv")[,],read.csv("..//data11.csv")[,],read.csv("..//data12.csv")[,],read.csv("..//data13.csv")[,],read.csv("..//data14.csv")[,],read.csv("..//data15.csv")[,],read.csv("..//data16.csv")[,])
+
+write.csv(data_final_colour, "..//data_final_colour.csv")
+
+```
+
+
+##analysis using lg_distances
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+ladybird <- read.csv("..//data_final_colour_no_IGm.csv")
+
+library("lme4")
+library("lmerTest")
+library(car)
+library(MASS)
+#install.packages("mlmRev")
+library(mlmRev)
+#install.packages("agridat")
+library(agridat)
+#install.packages("MCMCglmm")
+library(MCMCglmm)
+library(ggplot2)
+#install.packages("scapeMCMC")
+library(plotMCMC)
+
+require(ggplot2)
+require(pscl)
+require(boot)
+
+#ggplot(ladybird, aes(avg_lgDist, fill = species)) + geom_histogram(binwidth = 1) + facet_grid(species ~ ., margins = TRUE, scales = "free")
+
+
+paste("testing different probability distributions for response variable: lgdistance")
+
+ladybird$distance.t <- ladybird$distance + 1
+qqp(ladybird$distance.t, "norm")
+
+qqp(ladybird$distance.t, "lnorm")
+
+gamma <- fitdistr(ladybird$distance.t, "gamma")
+qqp(ladybird$distance.t, "gamma", shape = gamma$estimate[[1]], rate = gamma$estimate[[2]])
+
+
+ladybird$lgdistance.t <- ladybird$lgdistance + 7
+qqp(ladybird$lgdistance.t, "norm")
+
+qqp(ladybird$lgdistance.t, "lnorm")
+
+gamma <- fitdistr(ladybird$lgdistance.t, "gamma")
+qqp(ladybird$lgdistance.t, "gamma", shape = gamma$estimate[[1]], rate = gamma$estimate[[2]])
+
+
+
+ladybird
+
+#PQLglmm for non normal distance variable
+#species and patch colour are corellated to each other so only one can be used in one model in PQL
+
+PQL_species <- glmmPQL(distance.t ~ species, ~1 | picture_id, family = gaussian(link = "log"),data = ladybird, verbose = FALSE)
+
+summary(PQL_species)
+
+#according to the model adoxellus and halmus are different 
+
+
+PQL_patch <- glmmPQL(distance.t ~ patch, ~1 | picture_id, family = gaussian(link = "log"),data = ladybird, verbose = FALSE)
+
+summary(PQL_patch)
+
+#according to the model black is different from all colours
+
+mean(ladybird$distance.t)
+
+#but the mean of distance.t is less than 5, which is not ideal for glmmPQL - so moving on...
+
+GHQ <- glmer(distance.t ~ species + (1 | picture_id), data = ladybird, family = gaussian(link = "log"), nAGQ = 15)
+
+summary(GHQ)
+
+#scaling data to converge
+
+numcols <- grep("^c\\.",names(ladybird))
+dfs <- ladybird
+dfs[,numcols] <- scale(dfs[,numcols])
+m1_sc <- update(GHQ,data=dfs)
+
+
+#checking singularity
+#If the fit is singular or near-singular, there might be a higher chance of a false positive (we're not necessarily screening out gradient and Hessian checking on singular directions properly); a higher chance that the model has actually misconverged (because the optimization problem is difficult on the boundary); and a reasonable argument that the random effects model should be simplified.The definition of singularity is that some of the constrained parameters of the random effects theta parameters are on the boundary (equal to zero, or very very close to zero, say <10???6):
+
+tt <- getME(m1_sc,"theta")
+ll <- getME(m1_sc,"lower")
+min(tt[ll==0])
+
+#not a problem here
+
+#double checking gradient calculations
+
+#getting precalculated info
+
+derivs1 <- m1_sc@optinfo$derivs
+sc_grad1 <- with(derivs1,solve(Hessian,gradient))
+max(abs(sc_grad1))
+
+max(pmin(abs(sc_grad1),abs(derivs1$gradient)))
+
+library("numDeriv")
+library("RCurl") ## to source() from Github
+library("ggplot2"); theme_set(theme_bw())
+library("reshape2")
+library("plyr")
+library("RColorBrewer")
+
+dd <- update(m1_sc,devFunOnly=TRUE)
+pars <- unlist(getME(m1_sc,c("theta","fixef")))
+grad2 <- grad(dd,pars)
+hess2 <- hessian(dd,pars)
+sc_grad2 <- solve(hess2,grad2)
+max(pmin(abs(sc_grad2),abs(grad2)))
+
+#restart
+
+ss <- getME(m1_sc,c("theta","fixef"))
+m2 <- update(m1_sc,start=ss,control=glmerControl(optCtrl=list(maxfun=2e4)))
+
+#optimising
+
+m3 <- update(m1_sc,start=ss,control=glmerControl(optimizer="bobyqa",
+                            optCtrl=list(maxfun=2e5)))
+
+summary(m3)
+
+ggplot(ladybird, aes(x = distance)) + geom_density() + facet_wrap(species ~
+    patch)
+
+
+#model fiting
+
+plot(fitted(m3), residuals(m3), xlab = "Fitted Values", ylab = "Residuals")
+abline(h = 0, lty = 2)
+lines(smooth.spline(fitted(m3), residuals(m3)))
+
+overdisp_fun <- function(model) {
+    ## number of variance parameters in an n-by-n variance-covariance matrix
+    vpars <- function(m) {
+        nrow(m) * (nrow(m) + 1)/2
+    }
+    # The next two lines calculate the residual degrees of freedom
+    model.df <- sum(sapply(VarCorr(model), vpars)) + length(fixef(model))
+    rdf <- nrow(model.frame(model)) - model.df
+    # extracts the Pearson residuals
+    rp <- residuals(model, type = "pearson")
+    Pearson.chisq <- sum(rp^2)
+    prat <- Pearson.chisq/rdf
+    # Generates a p-value. If less than 0.05, the data are overdispersed.
+    pval <- pchisq(Pearson.chisq, df = rdf, lower.tail = FALSE)
+    c(chisq = Pearson.chisq, ratio = prat, rdf = rdf, p = pval)
+}
+
+overdisp_fun(m3)
+
+
+```
+
+```{r}
+
+
+
+ladybird <- read.csv("..//data_final_colour_no_IGm.csv")
+
+library("lme4")
+library("lmerTest")
+library(car)
+library(MASS)
+#install.packages("mlmRev")
+library(mlmRev)
+#install.packages("agridat")
+library(agridat)
+#install.packages("MCMCglmm")
+library(MCMCglmm)
+library(ggplot2)
+#install.packages("scapeMCMC")
+library(plotMCMC)
+
+require(ggplot2)
+require(pscl)
+require(boot)
+
+library("numDeriv")
+library("RCurl") ## to source() from Github
+library("ggplot2"); theme_set(theme_bw())
+library("reshape2")
+library("plyr")
+library("RColorBrewer")
+#mod2 <- lmer(lgdistance ~ species + patch + (1|picture_id), data = ladybird, REML = FALSE)
+#summary(mod2)
+
+#mod3 <- glmer(lgdistance ~ species + (1|picture_id), data = ladybird,
+ #   family = gaussian(link = "identity"), nAGQ = 25)  
+#summary(mod3)
+
+#mod3_2 <- lmer(lgdistance ~ species + patch + (1|picture_id), data = ladybird)
+#summary(mod3_2)
+
+#mod4 <- glmer(lgdistance.t ~ species + patch + species*patch + (1|picture_id), data = ladybird,  
+ #   family = gaussian(link = "log"), nAGQ = 25)  
+#summary(mod4)
+
+Laplace1 <- glmer(distance ~ species + (1 | picture_id), data = ladybird, family = gaussian(link = "log")) 
+
+summary(Laplace1)
+
+numcols <- grep("^c\\.",names(ladybird))
+dfs <- ladybird
+dfs[,numcols] <- scale(dfs[,numcols])
+m1_sc <- update(Laplace1,data=dfs)
+
+
+#checking singularity
+#If the fit is singular or near-singular, there might be a higher chance of a false positive (we're not necessarily screening out gradient and Hessian checking on singular directions properly); a higher chance that the model has actually misconverged (because the optimization problem is difficult on the boundary); and a reasonable argument that the random effects model should be simplified.The definition of singularity is that some of the constrained parameters of the random effects theta parameters are on the boundary (equal to zero, or very very close to zero, say <10???6):
+
+tt <- getME(m1_sc,"theta")
+ll <- getME(m1_sc,"lower")
+min(tt[ll==0])
+
+#not a problem here
+
+#double checking gradient calculations
+
+#getting precalculated info
+
+derivs1 <- m1_sc@optinfo$derivs
+sc_grad1 <- with(derivs1,solve(Hessian,gradient))
+max(abs(sc_grad1))
+
+max(pmin(abs(sc_grad1),abs(derivs1$gradient)))
+
+library("numDeriv")
+library("RCurl") ## to source() from Github
+library("ggplot2"); theme_set(theme_bw())
+library("reshape2")
+library("plyr")
+library("RColorBrewer")
+
+dd <- update(m1_sc,devFunOnly=TRUE)
+pars <- unlist(getME(m1_sc,c("theta","fixef")))
+grad2 <- grad(dd,pars)
+hess2 <- hessian(dd,pars)
+sc_grad2 <- solve(hess2,grad2)
+max(pmin(abs(sc_grad2),abs(grad2)))
+
+#restart
+
+ss <- getME(m1_sc,c("theta","fixef"))
+m2 <- update(m1_sc,start=ss,control=glmerControl(optCtrl=list(maxfun=2e4)))
+
+#optimising
+library(nlme)
+Laplace1 <- update(m1_sc,start=ss,control=glmerControl(optimizer="bobyqa",
+                            optCtrl=list(maxfun=2e5)))
+Laplace.fixed <- gls(distance ~ species,
+    data = ladybird, method = "REML")
+
+summary(Laplace1)
+summary(Laplace.fixed)
+
+ggplot(ladybird, aes(x = distance)) + geom_density() + facet_wrap(species ~
+    patch)
+
+
+#model fiting
+
+plot(fitted(Laplace1), residuals(Laplace1), xlab = "Fitted Values", ylab = "Residuals")
+abline(h = 0, lty = 2)
+lines(smooth.spline(fitted(Laplace1), residuals(Laplace1)))
+
+overdisp_fun <- function(model) {
+    ## number of variance parameters in an n-by-n variance-covariance matrix
+    vpars <- function(m) {
+        nrow(m) * (nrow(m) + 1)/2
+    }
+    # The next two lines calculate the residual degrees of freedom
+    model.df <- sum(sapply(VarCorr(model), vpars)) + length(fixef(model))
+    rdf <- nrow(model.frame(model)) - model.df
+    # extracts the Pearson residuals
+    rp <- residuals(model, type = "pearson")
+    Pearson.chisq <- sum(rp^2)
+    prat <- Pearson.chisq/rdf
+    # Generates a p-value. If less than 0.05, the data are overdispersed.
+    pval <- pchisq(Pearson.chisq, df = rdf, lower.tail = FALSE)
+    c(chisq = Pearson.chisq, ratio = prat, rdf = rdf, p = pval)
+}
+
+overdisp_fun(Laplace1)
+
+#rand(Laplace1)
+
+Anova(Laplace1)
+
+#Anova(Laplace1,Laplace.fixed)
+
+model1 = lme(distance ~ species, random=~1|picture_id,
+            data=ladybird,
+            method="REML")
+summary(model1)
+model.fixed1 = gls(distance ~ species,
+                  data=ladybird,
+                  method="REML")
+
+anova(model1,
+      model.fixed1)
+
+model2 = lme(distance ~ patch, random=~1|picture_id,
+            data=ladybird,
+            method="REML")
+summary(model2)
+model.fixed2 = gls(distance ~ patch,
+                  data=ladybird,
+                  method="REML")
+
+anova(model2,
+      model.fixed2)
+
+```
+
+#Laplace with species and patch
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+ladybird <- read.csv("..//data_final_colour_no_IGm.csv")
+
+Laplace <- glmer(distance ~ species + patch + (1 | picture_id),
+    data = ladybird, family = gaussian(link = "log")) 
+
+summary(Laplace)
+
+numcols <- grep("^c\\.",names(ladybird))
+dfs <- ladybird
+dfs[,numcols] <- scale(dfs[,numcols])
+m1_sc <- update(Laplace,data=dfs)
+
+
+#checking singularity
+#If the fit is singular or near-singular, there might be a higher chance of a false positive (we're not necessarily screening out gradient and Hessian checking on singular directions properly); a higher chance that the model has actually misconverged (because the optimization problem is difficult on the boundary); and a reasonable argument that the random effects model should be simplified.The definition of singularity is that some of the constrained parameters of the random effects theta parameters are on the boundary (equal to zero, or very very close to zero, say <10???6):
+
+tt <- getME(m1_sc,"theta")
+ll <- getME(m1_sc,"lower")
+min(tt[ll==0])
+
+#not a problem here
+
+#double checking gradient calculations
+
+#getting precalculated info
+
+derivs1 <- m1_sc@optinfo$derivs
+sc_grad1 <- with(derivs1,solve(Hessian,gradient))
+max(abs(sc_grad1))
+
+max(pmin(abs(sc_grad1),abs(derivs1$gradient)))
+
+library("numDeriv")
+library("RCurl") ## to source() from Github
+library("ggplot2"); theme_set(theme_bw())
+library("reshape2")
+library("plyr")
+library("RColorBrewer")
+
+dd <- update(m1_sc,devFunOnly=TRUE)
+pars <- unlist(getME(m1_sc,c("theta","fixef")))
+grad2 <- grad(dd,pars)
+hess2 <- hessian(dd,pars)
+sc_grad2 <- solve(hess2,grad2)
+max(pmin(abs(sc_grad2),abs(grad2)))
+
+#restart
+
+ss <- getME(m1_sc,c("theta","fixef"))
+m2 <- update(m1_sc,start=ss,control=glmerControl(optCtrl=list(maxfun=2e4)))
+
+#optimising
+
+Laplace <- update(m1_sc,start=ss,control=glmerControl(optimizer="bobyqa",
+                            optCtrl=list(maxfun=2e5)))
+
+summary(Laplace)
+
+ggplot(ladybird, aes(x = distance)) + geom_density() + facet_wrap(species ~
+    patch)
+
+
+#model fiting
+
+plot(fitted(Laplace), residuals(Laplace), xlab = "Fitted Values", ylab = "Residuals")
+abline(h = 0, lty = 2)
+lines(smooth.spline(fitted(Laplace), residuals(Laplace)))
+
+overdisp_fun <- function(model) {
+    ## number of variance parameters in an n-by-n variance-covariance matrix
+    vpars <- function(m) {
+        nrow(m) * (nrow(m) + 1)/2
+    }
+    # The next two lines calculate the residual degrees of freedom
+    model.df <- sum(sapply(VarCorr(model), vpars)) + length(fixef(model))
+    rdf <- nrow(model.frame(model)) - model.df
+    # extracts the Pearson residuals
+    rp <- residuals(model, type = "pearson")
+    Pearson.chisq <- sum(rp^2)
+    prat <- Pearson.chisq/rdf
+    # Generates a p-value. If less than 0.05, the data are overdispersed.
+    pval <- pchisq(Pearson.chisq, df = rdf, lower.tail = FALSE)
+    c(chisq = Pearson.chisq, ratio = prat, rdf = rdf, p = pval)
+}
+
+overdisp_fun(Laplace)
+```
+#only species - Laplace
+```{r}
+
+ladybird <- read.csv("..//data_final_colour_no_IGm.csv")
+
+Laplace <- glmer(distance ~ species + (1 | picture_id),
+    data = ladybird, family = gaussian(link = "log")) 
+
+summary(Laplace)
+
+numcols <- grep("^c\\.",names(ladybird))
+dfs <- ladybird
+dfs[,numcols] <- scale(dfs[,numcols])
+m1_sc <- update(Laplace,data=dfs)
+
+
+#checking singularity
+#If the fit is singular or near-singular, there might be a higher chance of a false positive (we're not necessarily screening out gradient and Hessian checking on singular directions properly); a higher chance that the model has actually misconverged (because the optimization problem is difficult on the boundary); and a reasonable argument that the random effects model should be simplified.The definition of singularity is that some of the constrained parameters of the random effects theta parameters are on the boundary (equal to zero, or very very close to zero, say <10???6):
+
+tt <- getME(m1_sc,"theta")
+ll <- getME(m1_sc,"lower")
+min(tt[ll==0])
+
+#not a problem here
+
+#double checking gradient calculations
+
+#getting precalculated info
+
+derivs1 <- m1_sc@optinfo$derivs
+sc_grad1 <- with(derivs1,solve(Hessian,gradient))
+max(abs(sc_grad1))
+
+max(pmin(abs(sc_grad1),abs(derivs1$gradient)))
+
+library("numDeriv")
+library("RCurl") ## to source() from Github
+library("ggplot2"); theme_set(theme_bw())
+library("reshape2")
+library("plyr")
+library("RColorBrewer")
+
+dd <- update(m1_sc,devFunOnly=TRUE)
+pars <- unlist(getME(m1_sc,c("theta","fixef")))
+grad2 <- grad(dd,pars)
+hess2 <- hessian(dd,pars)
+sc_grad2 <- solve(hess2,grad2)
+max(pmin(abs(sc_grad2),abs(grad2)))
+
+
+#restart
+
+ss <- getME(m1_sc,c("theta","fixef"))
+m2 <- update(m1_sc,start=ss,control=glmerControl(optCtrl=list(maxfun=2e4)))
+
+#optimising
+
+Laplace_sp <- update(m1_sc,start=ss,control=glmerControl(optimizer="bobyqa",
+                            optCtrl=list(maxfun=2e5)))
+
+summary(Laplace_sp)
+
+
+ggplot(ladybird, aes(x = distance)) + geom_density() + facet_wrap(species ~
+    patch)
+
+
+#model fiting
+
+plot(fitted(Laplace_sp), residuals(Laplace_sp), xlab = "Fitted Values", ylab = "Residuals")
+abline(h = 0, lty = 2)
+lines(smooth.spline(fitted(Laplace_sp), residuals(Laplace_sp)))
+
+library("gridExtra")
+#colvec <- c("#ff1111","#007eff") ## second colour matches lattice default
+#grid.arrange(plot(Laplace_sp,type=c("p","smooth")),
+ #            plot(Laplace_sp,sqrt(abs(resid(.)))~fitted(.),
+  #                col=ifelse(ladybird$species=="HC, SM",colvec[1],colvec[2]),
+   #               type=c("p","smooth"),ylab=expression(sqrt(abs(resid)))))
+
+ #plot(residuals(Laplace_sp)~fitted(Laplace_sp), col=ladybird$species,  labels=rownames(ladybird$species))
+ #abline(h=0, col=8, lty=3)
+ 
+#ploting residual plot with colours 
+
+plot(Laplace_sp,col=c("blue","darkorange","yellow","red","green","purple","black","pink")[as.numeric(ladybird$species)],  labels=ladybird$species)
+
+
+
+             
+print(summary(Laplace_sp),correlation=FALSE)
+
+
+VarCorr(Laplace_sp)
+
+overdisp_fun <- function(model) {
+    ## number of variance parameters in an n-by-n variance-covariance matrix
+    vpars <- function(m) {
+        nrow(m) * (nrow(m) + 1)/2
+    }
+    # The next two lines calculate the residual degrees of freedom
+    model.df <- sum(sapply(VarCorr(model), vpars)) + length(fixef(model))
+    rdf <- nrow(model.frame(model)) - model.df
+    # extracts the Pearson residuals
+    rp <- residuals(model, type = "pearson")
+    Pearson.chisq <- sum(rp^2)
+    prat <- Pearson.chisq/rdf
+    # Generates a p-value. If less than 0.05, the data are overdispersed.
+    pval <- pchisq(Pearson.chisq, df = rdf, lower.tail = FALSE)
+    c(chisq = Pearson.chisq, ratio = prat, rdf = rdf, p = pval)
+}
+
+overdisp_fun(Laplace_sp)
+
+#ploting residula plot with labels
+
+plot(residuals(Laplace_sp)~fitted(Laplace_sp), col=ladybird$species,  labels=rownames(ladybird$species))
+ abline(h=0, col=8, lty=3)
+ text(fitted(Laplace_sp), residuals(Laplace_sp), 
+   labels=ladybird$species)
+ 
+
+
+
+
+```
+
+#Selecting models
+
+
+```{r}
+
+paste("Laplace species model")
+
+summary(Laplace_sp)
+paste("Laplace species and patch model")
+
+summary(Laplace1)
+
+paste("lme model")
+
+paste("species")
+
+model1 = lme(distance ~ species, random=~1|picture_id,
+            data=ladybird,
+            method="REML")
+summary(model1)
+model.fixed1 = gls(distance ~ species,
+                  data=ladybird,
+                  method="REML")
+
+anova(model1,
+      model.fixed1)
+
+paste("patch")
+
+model2 = lme(distance ~ patch, random=~1|picture_id,
+            data=ladybird,
+            method="REML")
+summary(model2)
+model.fixed2 = gls(distance ~ patch,
+                  data=ladybird,
+                  method="REML")
+
+anova(model2,
+      model.fixed2)
+paste("there is an effect of random factor")
+
+gmm <- lmer(distance ~ species + (1|picture_id), data = ladybird)
+
+drop1(gmm,test="Chisq")
+
+#anova(gmm,Laplace_sp,test="Chisq")
+
+# LRT calculated using the loglik() function
+#
+G2 = -2 * logLik(gmm) + 2 * logLik(Laplace_sp)
+pchisq(as.numeric(G2), df=1, lower.tail=F)
+
+
+```
+
+#Final selected model - Laplace species & colour model
+```{r}
+summary(Laplace1)
+```
+
+
+
+```{r}
+
+ladybird <- read.csv("..//data_final_colour_no_IGm.csv")
+
+#plot.title = element_text(color="red", size=14, face="bold.italic"),
+
+library(ggplot2)
+
+# Change box plot colors by groups
+ggplot(ladybird, aes(x=species, y=distance, fill=patch)) +
+  geom_boxplot()
+# Change the position
+p<-ggplot(ladybird, aes(x=species, y=distance, fill=patch)) +
+  geom_boxplot(position=position_dodge(0.8))
+p
+p+scale_fill_manual(values=c("black", "blue", "brown", "yellow")) + theme_classic() + labs (x = "species", y = "Distance from the centroid")+ theme(axis.text.x = element_text(size = 14, angle = 45, hjust = 1))+ theme(axis.title.x = element_text(color="black", size=14, face="bold"),
+axis.title.y = element_text(color="black", size=14, face="bold"))+ theme(legend.text = element_text(colour="black", size=14))+ theme(legend.title = element_text(colour="black", size=14, 
+                                      face="bold"))
+
+
+
+
+
+
+```
+
+```{r}
+
+data <- read.csv("..//intro_mus.csv")
+
+data$R <- data$R/255
+data$G <- data$G/255
+data$B <- data$B/255
+
+data1 <- data[(data$species =="IG"),][]
+data1 <-data1[(data1$patch=="yellow"),][]
+
+#data2 <- data1[,c("R", "G", "B")]
+#data3 <- data2
+
+data3 <- data1
+
+
+#get centroid 
+for (k in 1:nrow(data3)) {
+  data3$centR[k] <- mean(data3$R)
+    data3$centG[k] <- mean(data3$G)
+      data3$centB[k] <- mean(data3$B)
+      
+      k=k+1
+  
+  
+}
+
+#data4 <- cbind(data1[,], data3[,c("distance","lgdistance","centR","centG","centB")])
+write.csv(data3, "..//mus_1.csv")
+
+
+
+data1 <- data[(data$species =="IG"),][]
+data1 <-data1[(data1$patch=="black"),][]
+
+#data2 <- data1[,c("R", "G", "B")]
+#data3 <- data2
+
+data3 <- data1
+
+
+#get centroid 
+for (k in 1:nrow(data3)) {
+  data3$centR[k] <- mean(data3$R)
+    data3$centG[k] <- mean(data3$G)
+      data3$centB[k] <- mean(data3$B)
+      
+      k=k+1
+  
+  
+}
+
+#data4 <- cbind(data1[,], data3[,c("distance","lgdistance","centR","centG","centB")])
+write.csv(data3, "../mus_2.csv")
+
+
+
+
+
+data1 <- data[(data$species =="IG_museum"),][]
+data1 <-data1[(data1$patch=="yellow"),][]
+
+#data2 <- data1[,c("R", "G", "B")]
+#data3 <- data2
+
+data3 <- data1
+
+
+#get centroid 
+for (k in 1:nrow(data3)) {
+  data3$centR[k] <- mean(data3$R)
+    data3$centG[k] <- mean(data3$G)
+      data3$centB[k] <- mean(data3$B)
+      
+      k=k+1
+  
+  
+}
+
+#data4 <- cbind(data1[,], data3[,c("distance","lgdistance","centR","centG","centB")])
+write.csv(data3, "..//mus_3.csv")
+
+
+
+data1 <- data[(data$species =="IG_museum"),][]
+data1 <-data1[(data1$patch=="black"),][]
+
+#data2 <- data1[,c("R", "G", "B")]
+#data3 <- data2
+
+data3 <- data1
+
+
+#get centroid 
+for (k in 1:nrow(data3)) {
+  data3$centR[k] <- mean(data3$R)
+    data3$centG[k] <- mean(data3$G)
+      data3$centB[k] <- mean(data3$B)
+      
+      k=k+1
+  
+  
+}
+
+#data4 <- cbind(data1[,], data3[,c("distance","lgdistance","centR","centG","centB")])
+write.csv(data3, "../mus_4.csv")
+
+data_rep_final_colour <- rbind(read.csv("..//mus_1.csv")[,], read.csv("..//mus_2.csv")[,], read.csv("..//mus_3.csv")[,], read.csv("..//mus_4.csv")[,])
+
+
+ladybird <- data_rep_final_colour
+
+
+#ladybird <- read.csv("..//data_final_colour_no_IGm.csv")
+
+library("lme4")
+library("lmerTest")
+library(car)
+library(MASS)
+#install.packages("mlmRev")
+library(mlmRev)
+#install.packages("agridat")
+library(agridat)
+#install.packages("MCMCglmm")
+library(MCMCglmm)
+library(ggplot2)
+#install.packages("scapeMCMC")
+library(plotMCMC)
+
+require(ggplot2)
+require(pscl)
+require(boot)
+
+#ggplot(ladybird, aes(avg_lgDist, fill = species)) + geom_histogram(binwidth = 1) + facet_grid(species ~ ., margins = TRUE, scales = "free")
+
+
+paste("testing different probability distributions for response variable: lgdistance")
+
+ladybird$distance.t <- ladybird$distance + 1
+qqp(ladybird$distance.t, "norm")
+
+qqp(ladybird$distance.t, "lnorm")
+
+gamma <- fitdistr(ladybird$distance.t, "gamma")
+qqp(ladybird$distance.t, "gamma", shape = gamma$estimate[[1]], rate = gamma$estimate[[2]])
+
+
+ladybird$lgdistance.t <- ladybird$lgdistance + 7
+qqp(ladybird$lgdistance.t, "norm")
+
+qqp(ladybird$lgdistance.t, "lnorm")
+
+gamma <- fitdistr(ladybird$lgdistance.t, "gamma")
+qqp(ladybird$lgdistance.t, "gamma", shape = gamma$estimate[[1]], rate = gamma$estimate[[2]])
+
+
+
+ladybird
+
+#PQLglmm for non normal distance variable
+#species and patch colour are corellated to each other so only one can be used in one model in PQL
+
+PQL_species <- glmmPQL(distance.t ~ species, ~1 | picture_id, family = gaussian(link = "log"),data = ladybird, verbose = FALSE)
+
+summary(PQL_species)
+
+#according to the model adoxellus and halmus are different 
+
+
+PQL_patch <- glmmPQL(distance.t ~ patch, ~1 | picture_id, family = gaussian(link = "log"),data = ladybird, verbose = FALSE)
+
+summary(PQL_patch)
+
+#according to the model black is different from all colours
+
+mean(ladybird$distance.t)
+
+#but the mean of distance.t is less than 5, which is not ideal for glmmPQL - so moving on...
+
+Lap <- glmer(distance ~ species + patch + (1 | picture_id), data = ladybird, family = gaussian(link = "log"))
+
+summary(Lap)
+
+

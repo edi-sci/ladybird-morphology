@@ -1,0 +1,425 @@
+---
+title: "ladybird-morphology-body size - hindwing shape"
+author: "Heshani Edirisinghe"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#load the required packages
+library(ggplot2)
+library(ade4)
+library(cluster)
+library(grid)
+library(png)
+library(colorBlindness)
+library(dplyr)
+
+#for wing shape analysis
+library(geomorph)
+library(shapes)
+library(svd)
+library(scatterplot3d)
+library(rgl)
+library(MASS)
+library(ape)
+library(vegan)
+
+#GLM
+library("lme4")
+library("lmerTest")
+library(MuMIn)
+```
+
+#Explore all data for size parameters
+``` {r, echo=FALSE, message=FALSE, warning=FALSE}
+
+ladybird_all<- read.csv("data_morpho_1.csv", header=TRUE)
+
+summary(ladybird_all)
+
+```
+Notes: There are few missing values in the size variables. For now we will explore with these.
+
+##Exploring distribution of size variables between species
+
+``` {r, echo=FALSE, message=FALSE, warning=FALSE}
+
+# Function to draw faceted graphs for selected continuous variables
+draw_faceted_graphs <- function(data, category_var, continuous_vars) {
+  
+  # Check if the specified variables exist in the dataframe
+  if (!(category_var %in% names(data))) {
+    stop("Category variable not found in the dataframe.")
+  }
+  
+  for (var in continuous_vars) {
+    if (!(var %in% names(data))) {
+      stop(paste("Continuous variable '", var, "' not found in the dataframe.", sep = ""))
+    }
+  }
+  
+  # Create faceted graphs
+  plots <- list()
+  for (var in continuous_vars) {
+    plots[[var]] <- ggplot(data, aes_string(x = category_var, y = var)) +
+      geom_boxplot() 
+      labs(title = paste("Faceted by", category_var), x = category_var, y = var)
+  }
+  
+  # Return the list of faceted graphs
+  return(plots)
+}
+
+#plots of continous variables (size variables) by species
+faceted_plots_species <- draw_faceted_graphs(ladybird_all, "species", c("pronotum_width", "two_elytra_points", "width_total", "elytra_length", "head_width"))
+
+# Print the plots
+for (plot in faceted_plots_species) {
+  print(plot)
+}
+
+#plots of continous variables (size variables) by thier origin
+faceted_plots_origin <- draw_faceted_graphs(ladybird_all, "origin", c("pronotum_width", "two_elytra_points", "width_total", "elytra_length", "head_width"))
+
+# Print the plots
+for (plot in faceted_plots_origin) {
+  print(plot)
+}
+
+
+```
+
+Notes: size data are skewed. In total width and distance between 2 elytra points the native species showed a negative skew while introduced species showed a positive skew. Outliers identified - the records were check individually and decided to keep the records as they show the variance in size of different species.
+
+#Principal component analysis for size variables
+Since size variables are correlated to each other creating a principal componant analysis. Using nipals algorithm as it allows for missing values. 
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#Extracting the continuous variables only
+ladybird <- read.csv("data_morpho_1_for_pca.csv")
+
+## 1st NIPALS PCA, extracting 2 components
+
+PCA1 <- nipals (ladybird, nf=2, rec=TRUE, niter=200, tol=1e-09)
+
+paste("summary of 1st NIPALS PCA, extracting 2 components")
+PCA1
+summary(PCA1)
+
+
+## 2nd NIPALS PCA, extracting 3 components
+
+
+PCA2 <- nipals (ladybird, nf=3, rec=TRUE, niter=400, tol=1e-09)
+paste("summary of 2nd NIPALS PCA, extracting 3 components")
+PCA2
+summary(PCA2)
+
+
+
+```
+Notes: Going to concentrate on the first two principal components (PCA1)
+
+Calculating the eigenvalues of the principal components:
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+PCA1$eig
+
+```
+
+Calculating the percentage variance explained by each principal component:
+``` {r, echo=FALSE, message=FALSE, warning=FALSE}
+
+(kip <- 100*PCA1$eig/sum(PCA1$eig))
+
+```
+Calculating the component loading scores:
+``` {r, echo=FALSE, message=FALSE, warning=FALSE}
+
+PCA1$c1
+
+```
+Extracting the principal component scores into csv
+
+``` {r, echo=FALSE, message=FALSE, warning=FALSE}
+
+morpho_pca1 <- PCA1$li
+#write.csv(PCA1$li, file = "morpho_size_pcscores.csv")
+
+#Merging dataframes
+phenovar1 <- data.frame(ladybird_all,morpho_pca1)
+
+#write.csv(phenovar1, "morpho_data_with_pca_no_wingpc.csv")
+
+```
+
+##Graphing the pc scores
+``` {r, echo=FALSE, message=FALSE, warning=FALSE}
+
+class(phenovar1$origin)
+phenovar1$origin <- as.factor(phenovar1$origin)
+group <- phenovar1$species*phenovar1$origin
+ggplot(phenovar1, aes(x=V1, y=V2, group = group)) +
+  geom_point(aes(shape = origin, color=species), size=8) + 
+  #scale_shape_manual(name = "Trend", values = c(1, 2, 1, 2,1,2,1,2,1,2)) +
+  #scale_fill_manual(name = "Trend", values = c("blue", "red", "orange", "green", "black", "yellow", "pink", "brown", "purple","white")) +
+    #facet_wrap( ~ origin)+
+  xlab("Principal component 1") +
+  ylab("Principal component 2") +
+  theme_classic()+
+  #guides(colour = guide_legend(override.aes = list(size=10)), shape = guide_legend(override.aes = list(size=8)) )+
+  theme(axis.title.x = element_text(face="bold", size=18),
+        axis.text.x = element_text(size=18),
+        axis.title.y = element_text(face="bold", size=18),
+        axis.text.y = element_text(size=18),
+        legend.title=element_blank(),
+        legend.text = element_text(size = 18),
+        legend.key.size = unit(1,"lines") ,
+        strip.text.x = element_text(face="italic", size = 18),
+        axis.line.x = element_line(color="black", size = 0.5),
+        axis.line.y = element_line(color="black", size = 0.5))
+ggsave("plot_introVsNative_species.png", width = 30, height = 15, units = "cm")
+
+```
+#Adjusting for colourblindness - for publication
+```{r}
+path <- system.file("extdata", package = "colorBlindness")
+img <- readPNG(file.path("plot_introVsNative_species.png"))
+g <- rasterGrob(img, interpolate=TRUE)
+grid.draw(cvdPlot(g, 
+                  layout = c("origin", "deuteranope", "protanope",
+                             "enhanced", "enhanced.deuteranope", 
+                             "enhanced.protanope")))
+
+newImg <- replacePlotColor(g)
+outfile <- tempfile(fileext = ".png")
+png(outfile)
+grid.draw(newImg)
+dev.off()
+
+outfile
+
+```
+#Analysing wing shape data
+
+``` {r, echo=FALSE, message=FALSE, warning=FALSE}
+
+lands <- readland.tps(file = "combined_no_missing_2_final.txt", specID = "ID")
+#generate shape variables
+gpa.lands <- gpagen(lands)
+pca.lands <- plotTangentSpace(gpa.lands$coords, label = TRUE )
+
+
+wing_pc<- pca.lands$pc.scores
+#write.csv(pca.lands$pc.scores,"wing_pcs_final_May_2019.csv")
+
+pca.lands$pc.summary
+pca.lands$rotation
+
+pca.lands$pc.summary
+pca.lands$pc.scores
+pca.lands$pc.shapes
+pca.lands$sdev
+
+#plotting wing shape with reference frames for pc1 and pc2
+
+species_names_order <- read.csv("groups.csv")
+
+wing_pc_list <- data.frame(species_names_order, wing_pc)
+
+gp <- as.factor(wing_pc_list$species)
+
+col.gp <- rainbow(length(levels(gp))) # generates a set of different colour over the rainbow spectrum
+
+names(col.gp) <- levels(gp)
+
+col.gp <- col.gp[match(gp, names(col.gp))]
+
+xlab <- paste("Principal Component 1 ", "(", round(pca.lands$pc.summary$importance[2,1]*100, 1), "%)", sep="")
+ylab <- paste("Principal Component 2 ", "(", round(pca.lands$pc.summary$importance[2,2]*100, 1), "%)", sep="")
+
+mat <- matrix(c(4,5,0,1,1,2,1,1,3), 3)
+layout(mat, widths=c(1,1,1), heights=c(1,1,0.6))# set the size of the rows and columns
+
+# Item 1 to plot, the graph of PC1 vs PC2
+par(mar=c(4, 4, 1, 1)) # sets the margins
+
+plot(wing_pc_list$PC1, wing_pc_list$PC2, pch=21, cex=2, bg=col.gp, xlab=xlab, ylab=ylab, asp=T)
+legend(-0.075, 0.08, legend= unique(gp), pch=19,  col=unique(col.gp))
+ref <- mshape(gpa.lands$coords)
+
+par(mar = c(0,0,0,0)) # sets the margins
+plotRefToTarget(ref,pca.lands$pc.shapes$PC1min)
+
+# Item 3
+plotRefToTarget(ref,pca.lands$pc.shapes$PC1max)
+# Item 4
+plotRefToTarget(ref,pca.lands$pc.shapes$PC2max)
+# Item 5
+plotRefToTarget(ref,pca.lands$pc.shapes$PC2min)
+
+##end here
+
+barplot(pca.lands$pc.summary$sdev^2/sum(pca.lands$pc.summary$sdev^2))
+plot(pca.lands$pc.scores[,1:2],pch=15,xlab="PC1",ylab="PC2")
+text(pca.lands$pc.scores[,1:2],rownames(pca.lands$pc.scores[,1:2]),pos=4,cex=.5)
+
+library(ggplot2)
+ggplot(wing_pc_list, aes(x=PC1, y=PC2, colour= species, label = id )) +
+  geom_point() +
+  geom_text(aes(label=id), hjust=0, vjust=0 )+
+  xlab("PC1") +
+  ylab("PC2") +
+  theme(axis.title.x = element_text(face="bold", size=14),
+        axis.text.x = element_text(size=14),
+        axis.title.y = element_text(face="bold", size=14),
+        axis.text.y = element_text(size=14),
+        legend.title=element_blank(),
+        legend.text = element_text(face = "italic"),
+        strip.text.x = element_text(face="italic", size = 14),
+        axis.line.x = element_line(color="black", size = 0.5),
+        axis.line.y = element_line(color="black", size = 0.5))
+
+
+ggplot(wing_pc_list, aes(x=PC1, y=PC2, colour= species, label = id )) +
+  geom_point() +
+  xlab("PC1") +
+  ylab("PC2") +
+  theme(axis.title.x = element_text(face="bold", size=14),
+        axis.text.x = element_text(size=14),
+        axis.title.y = element_text(face="bold", size=14),
+        axis.text.y = element_text(size=14),
+        legend.title=element_blank(),
+        legend.text = element_text(face = "italic"),
+        strip.text.x = element_text(face="italic", size = 14),
+        axis.line.x = element_line(color="black", size = 0.5),
+        axis.line.y = element_line(color="black", size = 0.5))
+
+```
+#GLMM with all size and wing shape PCs
+``` {r, echo=FALSE, message=FALSE, warning=FALSE}
+all_data <- read.csv("final_morpho_data_2020.csv")
+
+qqp(all_data$size_pc1.t, "norm")
+
+qqp(all_data$size_pc1.t, "lnorm")
+
+body_size1 <- lmer(size_pc1 ~ origin + (1|species) + (1|site), data = all_data)
+summary(body_size1)
+body_size2 <- lmer(size_pc1 ~ species + (1|site), data = all_data)
+summary(body_size2)
+
+
+body_size1_ <- lmer(elytra_length ~ origin + (1|species) + (1|site), data = ladybird_all)
+summary(body_size1_)
+body_size2_ <- lmer(elytra_length ~ species + (1|site), data = ladybird_all)
+summary(body_size2_)
+AIC(body_size2_)
+AIC(body_size2)
+body_size3 <- lmer(size_pc2 ~ origin + (1|species) + (1|site), data = all_data)
+summary(body_size3)
+body_size4 <- lmer(size_pc2 ~ species + (1|site), data = all_data)
+summary(body_size4)
+
+body_size4_ <- lmer(width_total ~ species + (1|site), data = ladybird_all)
+summary(body_size4_)
+AIC(body_size4_)
+AIC(body_size4)
+
+wing_size1 <- lmer(wing_pc1 ~ species +  (1|site), data = all_data)
+summary(wing_size1)
+wing_size2 <- lmer(wing_pc2 ~ species +  (1|site), data = all_data)
+summary(wing_size2)
+
+
+paste("AIC of size_pc1 ~ origin model")
+AIC(body_size1)
+paste("AIC of size_pc1 ~ species model")
+AIC(body_size2)
+paste("AIC of size_pc2 ~ origin model")
+AIC(body_size3)
+paste("AIC of size_pc2 ~ species model")
+AIC(body_size4)
+paste("AIC of wing_pc1 ~ species model")
+AIC(wing_size1)
+paste("AIC of wing_pc2 ~ species model")
+AIC(wing_size2)
+```
+##Check model fit
+``` {r, echo=FALSE, message=FALSE, warning=FALSE}
+
+model_name <- NULL
+
+model_list <- list("body_size1",	"body_size2",	"body_size3","body_size4", "wing_size1", "wing_size2")
+
+model_fit <- data.frame(matrix(ncol=3, nrow = 4))
+colnames(model_fit) <- c("model","R2m","R2c")
+
+p=1
+for (i in 1:6) {
+  
+model_name_reset <- model_name
+model_name = paste(model_list[p])
+
+    j=1
+  model_fit[p,j] <- paste(model_list[p])
+  model_fit[p,j+1] <- r.squaredGLMM(get(model_name))[1][1]
+  model_fit[p,j+2] <- r.squaredGLMM(get(model_name))[2][1]
+model_name <-model_name_reset
+  j=1
+  p=p+1
+  
+}
+
+model_fit
+
+model_AIC <- data.frame(matrix(ncol=3, nrow = 6))
+colnames(model_AIC) <- c("model","AIC","BIC")
+
+p=1
+for (i in 1:6) {
+  
+model_name_reset <- model_name
+model_name = paste(model_list[p])
+
+    j=1
+  model_AIC[p,j] <- paste(model_list[p])
+  model_AIC[p,j+1] <- AIC(get(model_name))
+  model_AIC[p,j+2] <- BIC(get(model_name))
+model_name <-model_name_reset
+  j=1
+  p=p+1
+  
+
+}
+
+ 
+model_AIC
+
+```
+
+##Check linearity of residuals by making a residual plot
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+for (i in 1:6) {
+  
+  model_name = paste(model_list[[i]])
+
+plot(resid(get(model_name)) ~ fitted (get(model_name)), main= paste("residual plot",model_name),xlab = paste("fitted",model_name), ylab = paste("resid", model_name))
+abline (h=0)
+  
+}
+
+for (i in 1:6) {
+  
+model_name = paste(model_list[[i]])
+hist(residuals(get(model_name)),main = paste("Histogram of residuals",model_name), xlab = model_name)
+    model_name <- model_name_reset
+  
+  }
+
+```
